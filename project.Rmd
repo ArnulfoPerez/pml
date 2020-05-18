@@ -1,0 +1,161 @@
+---
+title: "Practical Machine Learning Coursera Project"
+author: "Armulfo Perez"
+date: "17/5/2020"
+output:
+  html_document: default
+  bookdown::html_document2: default
+bibliography: references.bib
+link-citations: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(lattice)
+library(ggplot2)
+library(caret)
+library(dplyr)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+library(corrplot)
+library(gbm)
+
+if (!file.exists("./data")) {
+  
+  dir.create("./data")
+  
+}
+
+training_Url <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testing_Url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+training_csv <- "./data/pml-training.csv"
+testing_csv  <- "./data/pml-testing.csv"
+
+if (!file.exists(training_csv)) {
+  download.file(training_Url, destfile=training_csv, method="curl")
+}
+
+if (!file.exists(testing_csv)) {
+  download.file(testing_Url, destfile=testing_csv, method="curl")
+}
+
+```
+
+## Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: <http://groupware.les.inf.puc-rio.br/har> (see the section on the Weight Lifting Exercise Dataset [@Groupware2013],[@Velloso2012],[@Velloso2013]). 
+
+## Weight Lifting Exercises Dataset
+
+Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. Participants were supervised by an experienced weight lifter to make sure the execution complied to the manner they were supposed to simulate. The exercises were performed by six male participants aged between 20-28 years, with little weight lifting experience. We made sure that all participants could easily simulate the mistakes in a safe and controlled manner by using a relatively light dumbbell (1.25kg).
+
+## Loading the data
+
+The data is available in two files, a training dataset that includes the class labels for training purposes, and a testing file with the class labels omitted.
+
+
+```{r data, cache= TRUE}
+
+
+training <- read.csv(training_csv)
+testing <- read.csv(testing_csv)
+
+dim(training)
+dim(testing)
+names(training)
+```
+
+## Preprocessing
+
+I will take advantage of the preprocessing function of the caret package. First, I am factorizing the class labels and the username, eliminating columns with na values, and keeping only numeric values.  Inside the caret Preprocess function, I will use the following methods:
+"center" subtracts the mean of the predictor's data (again from the data in x) from the predictor values while method = "scale" divides by the standard deviation. "zv" identifies numeric predictor columns with a single value (i.e. having zero variance) and excludes them from further calculations. Similarly, method = "nzv" does the same by applying nearZeroVar exclude "near zero-variance" predictors. method = "corr" seeks to filter out highly correlated predictors. For classification, method = "conditionalX" examines the distribution of each predictor conditional on the outcome. If there is only one unique value within any class, the predictor is excluded from further calculations.
+
+
+```{r pre, cache=TRUE}
+pre <- function(rawData){
+  rawData$user_name <- factor(rawData$user_name)
+  rawData$new_window <- factor(rawData$new_window)
+  preProcessed <- preProcess(rawData,method = c("center","scale","corr","nzv","conditionalX"))
+  x <- predict(preProcessed,newdata = rawData)
+  x<- x[, colSums(is.na(x)) == 0]
+  return( dplyr::select_if(x, function(col) is.numeric(col) | is.factor(col)))
+}
+
+training$classe <- factor(training$classe)
+data <- pre(training)
+
+testing$problem_id <- factor(testing$problem_id)
+validationData <- pre(testing)
+```
+
+## Data splitting
+
+Because we are required to use Random Forest with cross validation, I keep most of the data for training, and only left 10% for testing.
+
+```{r splitting, cache=TRUE}
+inTraining <- createDataPartition(data$classe, p = 0.9, list = FALSE)
+trainData <- data[inTraining, ]
+testData <- data[-inTraining, ]
+
+dim(trainData)
+dim(testData)
+```
+
+
+## Random Forest with cross validation
+
+The caret function trainControl allows one to set the training sequence. Here, I am setting 3 cycles of 10-fold cross validation, set arbitrarily from typical values.
+
+```{r cross_validation, cache=TRUE}
+#10 folds repeat 3 times
+control <- trainControl(method='repeatedcv', number=10, repeats=3)
+```
+
+Then the train function can be called with the “rf” method, and the control parameters set with the trainControl function.
+
+```{r randomForest_cv, cache=TRUE}
+set.seed(12345)
+modelRF <- train(classe ~ ., data=trainData, method="rf", trControl=control)
+modelRF$finalModel
+plot(modelRF)
+```
+
+Now I can use the testing dataset to check the accuracy of the model’s predictions.
+
+```{r prediction, cache=TRUE}
+prediction <- predict(modelRF, newdata=testData)
+confusion <- confusionMatrix(prediction, testData$classe)
+plot(confusion$table, col = confusion$byClass,
+     main = paste("Random Forest Confusion Matrix: Accuracy =",
+                  round(confusion$overall['Accuracy'], 4)))
+```
+
+The performance of the Random Forest classifier with repeated cross validation is very good. Just for fun, let's try another control method:
+
+```{r randomForest_oob, cache=TRUE}
+set.seed(12345)
+modelRF2 <- train(classe ~ ., data=trainData, method="rf", trControl=trainControl(method='oob'))
+modelRF2$finalModel
+plot(modelRF2)
+```
+
+
+## Validation values
+
+```{r valiation, cache=TRUE}
+validation <- predict(modelRF, newdata=validationData)
+table(validationData$problem_id,validation)
+```
+
+## Conclusions
+
+The Random Forest classifier has an almost perfect accuracy on the Weight Lifting Exercises Dataset, using default parameters of the caret package functions for training classifiers. This performance is due to the capabilities of the Random Forest classifier, but mainly to the good experiment design of the Groupwise\@LES research group [@Velloso2013].
+
+# References
+
+
