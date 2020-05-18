@@ -72,30 +72,33 @@ names(training)
 
 ## Preprocessing
 
-I will take advantage of the preprocessing function of the caret package. First, I am factorizing the class labels and the username, eliminating columns with na values, and keeping only numeric values.  Inside the caret Preprocess function, I will use the following methods:
-"center" subtracts the mean of the predictor's data (again from the data in x) from the predictor values while method = "scale" divides by the standard deviation. "zv" identifies numeric predictor columns with a single value (i.e. having zero variance) and excludes them from further calculations. Similarly, method = "nzv" does the same by applying nearZeroVar exclude "near zero-variance" predictors. method = "corr" seeks to filter out highly correlated predictors. For classification, method = "conditionalX" examines the distribution of each predictor conditional on the outcome. If there is only one unique value within any class, the predictor is excluded from further calculations.
+I will take advantage of the preprocessing function of the caret package. First, I am factorizing the class labels and the username, eliminating columns with na values, and keeping only numeric values.
 
 
 ```{r pre, cache=TRUE}
-pre <- function(x){
-  return( dplyr::select_if(x[, colSums(is.na(x)) == 0], function(col) is.numeric(col) | is.factor(col)))
-}
 
-training$classe <- factor(training$classe)
-data <- pre(training[,-nearZeroVar(training)])
+data<- training[, colSums(is.na(training)) == 0]
+validationData <- testing[, colSums(is.na(testing)) == 0]
+data <- data[, -c(1:7)]
+validationData <- validationData[, -c(1:7)]
 
-testing$problem_id <- factor(testing$problem_id)
-validationData <- pre(testing)
+
+data$classe <- factor(data$classe)
+validationData$problem_id <- factor(validationData$problem_id)
 ```
 
 ## Data splitting
 
-Because we are required to use Random Forest with cross validation, I keep most of the data for training, and only left 10% for testing.
+Because we are required to use Random Forest with cross validation, I keep 70% of the data for training, and 30% for testing.
 
 ```{r splitting, cache=TRUE}
 inTraining <- createDataPartition(data$classe, p = 0.7, list = FALSE)
 trainData <- data[inTraining, ]
 testData <- data[-inTraining, ]
+
+NZV <- nearZeroVar(trainData)
+trainData <- trainData[, -NZV]
+testData  <- testData[, -NZV]
 
 dim(trainData)
 dim(testData)
@@ -137,62 +140,11 @@ plot(confusion$table, col = confusion$byClass,
 ```{r valiation, cache=TRUE}
 validation <- predict(modelRF, newdata=validationData)
 table(validationData$problem_id,validation)
-
-trainData<- training[, colSums(is.na(training)) == 0]
-validData <- testing[, colSums(is.na(testing)) == 0]
-dim(trainData)
-
-dim(validData)
-
-trainData <- trainData[, -c(1:7)]
-validData <- validData[, -c(1:7)]
-dim(trainData)
-
-dim(validData)
-
-set.seed(1234) 
-inTrain <- createDataPartition(trainData$classe, p = 0.7, list = FALSE)
-trainData <- trainData[inTrain, ]
-testData <- trainData[-inTrain, ]
-dim(trainData)
-
-dim(testData)
-
-NZV <- nearZeroVar(trainData)
-trainData <- trainData[, -NZV]
-testData  <- testData[, -NZV]
-dim(trainData)
-
-dim(testData)
-
-
-set.seed(12345)
-
-
-controlRF <- trainControl(method="cv", number=3, verboseIter=FALSE)
-modRF1 <- train(classe ~ ., data=trainData, method="rf", trControl=controlRF)
-modRF1$finalModel
-
-predictRF1 <- predict(modRF1, newdata=testData)
-cmrf <- confusionMatrix(predictRF1, factor(testData$classe))
-cmrf
-
-plot(modRF1)
-
-plot(cmrf$table, col = cmrf$byClass, 
-     main = paste("Random Forest Confusion Matrix: Accuracy =", 
-                  round(cmrf$overall['Accuracy'], 4)))
-
-
-
-Results <- predict(modRF1, newdata=validData)
-Results
-
 ```
 
 ## Conclusions
 
-The Random Forest classifier has an almost perfect accuracy on the Weight Lifting Exercises Dataset, using default parameters of the caret package functions for training classifiers. This performance is due to the capabilities of the Random Forest classifier, but mainly to the good experiment design of the Groupwise\@LES research group [@Velloso2013].
+The Random Forest classifier has an almost perfect accuracy on the Weight Lifting Exercises Dataset, using default parameters of the caret package functions for training classifiers. This performance is due to the capabilities of the Random Forest classifier, but mainly to the good experiment design of the Groupwise\@LES research group [@Velloso2013]. Nonetheless, classification is sutle and overfitting is always a concern.
 
 # References
 
