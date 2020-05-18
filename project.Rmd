@@ -1,6 +1,6 @@
 ---
 title: "Practical Machine Learning Coursera Project"
-author: "Armulfo Perez"
+author: "Arnulfo Perez"
 date: "17/5/2020"
 output:
   html_document: default
