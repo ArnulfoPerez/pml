@@ -77,17 +77,12 @@ I will take advantage of the preprocessing function of the caret package. First,
 
 
 ```{r pre, cache=TRUE}
-pre <- function(rawData){
-  rawData$user_name <- factor(rawData$user_name)
-  rawData$new_window <- factor(rawData$new_window)
-  preProcessed <- preProcess(rawData,method = c("center","scale","corr","nzv","conditionalX"))
-  x <- predict(preProcessed,newdata = rawData)
-  x<- x[, colSums(is.na(x)) == 0]
-  return( dplyr::select_if(x, function(col) is.numeric(col) | is.factor(col)))
+pre <- function(x){
+  return( dplyr::select_if(x[, colSums(is.na(x)) == 0], function(col) is.numeric(col) | is.factor(col)))
 }
 
 training$classe <- factor(training$classe)
-data <- pre(training)
+data <- pre(training[,-nearZeroVar(training)])
 
 testing$problem_id <- factor(testing$problem_id)
 validationData <- pre(testing)
@@ -98,7 +93,7 @@ validationData <- pre(testing)
 Because we are required to use Random Forest with cross validation, I keep most of the data for training, and only left 10% for testing.
 
 ```{r splitting, cache=TRUE}
-inTraining <- createDataPartition(data$classe, p = 0.9, list = FALSE)
+inTraining <- createDataPartition(data$classe, p = 0.7, list = FALSE)
 trainData <- data[inTraining, ]
 testData <- data[-inTraining, ]
 
@@ -109,11 +104,11 @@ dim(testData)
 
 ## Random Forest with cross validation
 
-The caret function trainControl allows one to set the training sequence. Here, I am setting 3 cycles of 10-fold cross validation, set arbitrarily from typical values.
+The caret function trainControl allows one to set the training sequence. Here, I am setting 3-fold cross validation, set arbitrarily from typical values.
 
 ```{r cross_validation, cache=TRUE}
 #10 folds repeat 3 times
-control <- trainControl(method='repeatedcv', number=10, repeats=3)
+control <- trainControl(method='cv', number=3)
 ```
 
 Then the train function can be called with the “rf” method, and the control parameters set with the trainControl function.
@@ -135,14 +130,6 @@ plot(confusion$table, col = confusion$byClass,
                   round(confusion$overall['Accuracy'], 4)))
 ```
 
-The performance of the Random Forest classifier with repeated cross validation is very good. Just for fun, let's try another control method:
-
-```{r randomForest_oob, cache=TRUE}
-set.seed(12345)
-modelRF2 <- train(classe ~ ., data=trainData, method="rf", trControl=trainControl(method='oob'))
-modelRF2$finalModel
-plot(modelRF2)
-```
 
 
 ## Validation values
@@ -150,6 +137,57 @@ plot(modelRF2)
 ```{r valiation, cache=TRUE}
 validation <- predict(modelRF, newdata=validationData)
 table(validationData$problem_id,validation)
+
+trainData<- training[, colSums(is.na(training)) == 0]
+validData <- testing[, colSums(is.na(testing)) == 0]
+dim(trainData)
+
+dim(validData)
+
+trainData <- trainData[, -c(1:7)]
+validData <- validData[, -c(1:7)]
+dim(trainData)
+
+dim(validData)
+
+set.seed(1234) 
+inTrain <- createDataPartition(trainData$classe, p = 0.7, list = FALSE)
+trainData <- trainData[inTrain, ]
+testData <- trainData[-inTrain, ]
+dim(trainData)
+
+dim(testData)
+
+NZV <- nearZeroVar(trainData)
+trainData <- trainData[, -NZV]
+testData  <- testData[, -NZV]
+dim(trainData)
+
+dim(testData)
+
+
+set.seed(12345)
+
+
+controlRF <- trainControl(method="cv", number=3, verboseIter=FALSE)
+modRF1 <- train(classe ~ ., data=trainData, method="rf", trControl=controlRF)
+modRF1$finalModel
+
+predictRF1 <- predict(modRF1, newdata=testData)
+cmrf <- confusionMatrix(predictRF1, factor(testData$classe))
+cmrf
+
+plot(modRF1)
+
+plot(cmrf$table, col = cmrf$byClass, 
+     main = paste("Random Forest Confusion Matrix: Accuracy =", 
+                  round(cmrf$overall['Accuracy'], 4)))
+
+
+
+Results <- predict(modRF1, newdata=validData)
+Results
+
 ```
 
 ## Conclusions
